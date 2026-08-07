@@ -5,19 +5,29 @@
 # ///
 # DBTITLE 1,설정 + CSV 파싱
 # pipeline_rfq_strategy: 신규 RFQ 자동 전략 파이프라인
-# 트리거: Volume(/Volumes/wonik_poc/wonik_silver/rfq_inbox/) CSV 도착
+# 트리거: 환경별 Unity Catalog Volume의 rfq_inbox CSV 도착
 # Compute: ML Runtime (XGBoost 모델 로드 필수)
 
 import os, glob
 from pyspark.sql import functions as F
 from datetime import datetime
 
-# === 설정 ===
-CATALOG = "wonik_poc"
-SCHEMA  = "wonik_silver"
+# === 환경별 설정 ===
+# Job 파라미터가 있으면 사용하고, 대화형 실행에서는 안전한 dev 값을 기본값으로 사용합니다.
+def _widget_or_default(name, default):
+    try:
+        dbutils.widgets.text(name, default)
+        return dbutils.widgets.get(name) or default
+    except Exception:
+        return default
+
+
+CATALOG = _widget_or_default("catalog", "wonik_dev")
+RAW_SCHEMA = _widget_or_default("raw_schema", "wonik_raw")
+SCHEMA = _widget_or_default("silver_schema", "wonik_test1_silver")
 PREFIX  = f"{CATALOG}.{SCHEMA}"
 
-VOLUME_PATH     = "/Volumes/wonik_poc/wonik_raw/rfq_inbox"
+VOLUME_PATH     = f"/Volumes/{CATALOG}/{RAW_SCHEMA}/rfq_inbox"
 INPUT_TABLE     = f"{PREFIX}.silver_new_rfq_parsed_input"
 LIKELY_COMP_TABLE = f"{PREFIX}.gold_rfq_likely_competitor"
 SIMILAR_CASE_TABLE = f"{PREFIX}.gold_rfq_similar_case_result"
@@ -90,7 +100,7 @@ new_rfq_ids = [rid for rid in all_ids if rid not in existing_ids]
 print(f"적재 완료: {len(new_rfq_ids)}건 — {new_rfq_ids}")
 
 # 처리 완료된 파일을 별도 볼륨으로 이동 (inbox 밖 — 재귀 스캔 방지)
-PROCESSED_PATH = "/Volumes/wonik_poc/wonik_raw/rfq_processed"
+PROCESSED_PATH = f"/Volumes/{CATALOG}/{RAW_SCHEMA}/rfq_processed"
 try:
     files = dbutils.fs.ls(VOLUME_PATH)
     for f in files:

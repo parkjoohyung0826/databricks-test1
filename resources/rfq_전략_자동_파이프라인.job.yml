@@ -2,6 +2,13 @@ resources:
   jobs:
     rfq_전략_자동_파이프라인:
       name: RFQ 전략 자동 파이프라인
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: raw_schema
+          default: ${var.raw_schema}
+        - name: silver_schema
+          default: ${var.silver_schema}
       tasks:
         - task_key: rfq_strategy_pipeline
           new_cluster:
@@ -13,7 +20,10 @@ resources:
             node_type_id: i3.xlarge
             num_workers: 0
             spark_conf:
+              "spark.databricks.cluster.profile": singleNode
               "spark.master": "local[*]"
+            custom_tags:
+              ResourceClass: SingleNode
             spark_version: 15.4.x-cpu-ml-scala2.12
           disabled: false
           email_notifications: {}
@@ -23,6 +33,10 @@ resources:
           notebook_task:
             notebook_path: ../src/pipeline_rfq_strategy.py
             source: WORKSPACE
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              raw_schema: "{{job.parameters.raw_schema}}"
+              silver_schema: "{{job.parameters.silver_schema}}"
           run_if: ALL_SUCCESS
           timeout_seconds: 1800
       email_notifications: {}

@@ -4,13 +4,48 @@ bundle:
 include:
   - resources/*.yml
 
-permissions:
-  - level: CAN_MANAGE
-    user_name: jhpark@saltware.co.kr
-  - level: CAN_MANAGE
-    group_name: users
+variables:
+  catalog:
+    description: Unity Catalog catalog for the deployment environment.
+  raw_schema:
+    description: Schema containing raw RFQ inputs and volumes.
+    default: wonik_raw
+  bronze_schema:
+    description: Bronze-layer schema.
+    default: wonik_test1_bronze
+  silver_schema:
+    description: Silver-layer schema.
+    default: wonik_test1_silver
+  gold_schema:
+    description: Gold-layer schema.
+    default: wonik_test1_gold
+  warehouse_id:
+    description: SQL warehouse used by the dashboard.
+    default: a8d6bb30fe50a758
 
 targets:
   dev:
+    default: true
+    mode: development
     workspace:
       host: https://dbc-629e05fc-5b2e.cloud.databricks.com/
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${workspace.current_user.short_name}/${bundle.target}
+    variables:
+      catalog: wonik_dev
+    permissions:
+      - level: CAN_MANAGE
+        user_name: ${workspace.current_user.userName}
+
+  prod:
+    mode: production
+    workspace:
+      host: https://dbc-629e05fc-5b2e.cloud.databricks.com/
+      # Move this to the production service principal's home when CI authentication is migrated.
+      root_path: /Workspace/Users/jhpark@saltware.co.kr/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: wonik_poc
+    presets:
+      name_prefix: "[prod] "
+    permissions:
+      - level: CAN_MANAGE
+        user_name: jhpark@saltware.co.kr

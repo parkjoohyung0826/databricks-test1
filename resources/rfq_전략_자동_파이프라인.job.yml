@@ -1,0 +1,38 @@
+resources:
+  jobs:
+    rfq_전략_자동_파이프라인:
+      name: RFQ 전략 자동 파이프라인
+      tasks:
+        - task_key: rfq_strategy_pipeline
+          new_cluster:
+            aws_attributes:
+              availability: SPOT_WITH_FALLBACK
+              zone_id: ap-northeast-2a
+            data_security_mode: SINGLE_USER
+            enable_elastic_disk: false
+            node_type_id: i3.xlarge
+            num_workers: 0
+            spark_conf:
+              "spark.master": "local[*]"
+            spark_version: 15.4.x-cpu-ml-scala2.12
+          disabled: false
+          email_notifications: {}
+          libraries:
+            - pypi:
+                package: databricks-vectorsearch
+          notebook_task:
+            notebook_path: ../src/pipeline_rfq_strategy.py
+            source: WORKSPACE
+          run_if: ALL_SUCCESS
+          timeout_seconds: 1800
+      email_notifications: {}
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      timeout_seconds: 0
+      trigger:
+        pause_status: UNPAUSED
+        periodic:
+          interval: 1
+          unit: DAYS
+      webhook_notifications: {}

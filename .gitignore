@@ -1,0 +1,12 @@
+.venv/
+.databricks/
+.jupyter-config/
+.jupyter-data/
+.jupyter-runtime/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/

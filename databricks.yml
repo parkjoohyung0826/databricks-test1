@@ -1,0 +1,16 @@
+bundle:
+  name: databricks-project
+
+include:
+  - resources/*.yml
+
+permissions:
+  - level: CAN_MANAGE
+    user_name: jhpark@saltware.co.kr
+  - level: CAN_MANAGE
+    group_name: users
+
+targets:
+  dev:
+    workspace:
+      host: https://dbc-629e05fc-5b2e.cloud.databricks.com/

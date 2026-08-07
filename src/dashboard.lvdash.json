@@ -1,0 +1,2296 @@
+{
+  "datasets": [
+    {
+      "displayName": "연말 예측 시뮬레이션",
+      "name": "yr_forecast",
+      "queryLines": [
+        "-- 연말 예측 시뮬레이션: 연간예산(12개월) vs 1~5월 실적 기반 예측\n",
+        "WITH actual_5m AS (\n",
+        "  SELECT\n",
+        "    `총비용계정`,\n",
+        "    MEASURE(`실적금액`) AS acc_act_5m\n",
+        "  FROM\n",
+        "    wonik_poc.wonik_gold.bgt_expense_metrics\n",
+        "  WHERE\n",
+        "    `기준월` IN ('01', '02', '03', '04', '05')\n",
+        "    AND `총비용계정` IS NOT NULL\n",
+        "  GROUP BY\n",
+        "    `총비용계정`\n",
+        "),\n",
+        "annual_plan AS (\n",
+        "  SELECT\n",
+        "    `총비용계정`,\n",
+        "    MEASURE(`예산계획금액`) AS yr_plan\n",
+        "  FROM\n",
+        "    wonik_poc.wonik_gold.bgt_expense_metrics\n",
+        "  WHERE\n",
+        "    `총비용계정` IS NOT NULL\n",
+        "  GROUP BY\n",
+        "    `총비용계정`\n",
+        ")\n",
+        "SELECT\n",
+        "  a.`총비용계정`,\n",
+        "  p.`yr_plan`,\n",
+        "  a.`acc_act_5m`,\n",
+        "  a.`acc_act_5m` / 5 AS `monthly_avg`,\n",
+        "  a.`acc_act_5m` / 5 * 12 AS `yr_estimated`,\n",
+        "  a.`acc_act_5m` + (a.`acc_act_5m` / 5 * 1.2 * 7) AS `yr_accel_20`,\n",
+        "  a.`acc_act_5m` / 5 * 12 / NULLIF(p.`yr_plan`, 0) * 100 AS `yr_est_rate`,\n",
+        "  a.`acc_act_5m` / 5 * 12 - p.`yr_plan` AS `yr_surplus_deficit`\n",
+        "FROM\n",
+        "  actual_5m a\n",
+        "    JOIN annual_plan p\n",
+        "      ON a.`총비용계정` = p.`총비용계정`\n",
+        "ORDER BY\n",
+        "  `yr_estimated` DESC"
+      ]
+    },
+    {
+      "displayName": "초과 계정 경고",
+      "name": "over_budget_alert",
+      "queryLines": [
+        "-- 초과 집행 계정 경고: 1~5월 실적 vs 1~5월 예산계획 (120% 초과 항목)\n",
+        "-- 최종예산은 연간 기준\n",
+        "WITH monthly AS (\n",
+        "  SELECT\n",
+        "    `표준부서` AS `부서명`,\n",
+        "    `계정명`,\n",
+        "    `총비용계정`,\n",
+        "    MEASURE(`예산계획금액`) AS `plan_amt`,\n",
+        "    MEASURE(`최종예산금액`) AS `final_amt`,\n",
+        "    MEASURE(`실적금액`) AS `act_amt`\n",
+        "  FROM\n",
+        "    wonik_poc.wonik_gold.bgt_expense_metrics\n",
+        "  WHERE\n",
+        "    `기준월` IN ('01', '02', '03', '04', '05')\n",
+        "  GROUP BY\n",
+        "    `표준부서`,\n",
+        "    `계정명`,\n",
+        "    `총비용계정`\n",
+        "),\n",
+        "annual AS (\n",
+        "  SELECT\n",
+        "    `표준부서` AS `부서명`,\n",
+        "    `계정명`,\n",
+        "    MEASURE(`최종예산금액`) AS `annual_final_amt`\n",
+        "  FROM\n",
+        "    wonik_poc.wonik_gold.bgt_expense_metrics\n",
+        "  GROUP BY\n",
+        "    `표준부서`,\n",
+        "    `계정명`\n",
+        ")\n",
+        "SELECT\n",
+        "  m.`부서명`,\n",
+        "  m.`계정명`,\n",
+        "  m.`총비용계정`,\n",
+        "  m.`plan_amt` AS `예산계획_1_5월`,\n",
+        "  a.`annual_final_amt` AS `최종예산_연간`,\n",
+        "  m.`act_amt` AS `실적_1_5월`,\n",
+        "  m.`act_amt` - m.`plan_amt` AS `초과금액_vs계획`,\n",
+        "  m.`act_amt` / NULLIF(m.`plan_amt`, 0) * 100 AS `집행률_vs계획`,\n",
+        "  m.`act_amt` / NULLIF(a.`annual_final_amt`, 0) * 100 AS `집행률_vs연간예산`\n",
+        "FROM\n",
+        "  monthly m\n",
+        "    JOIN annual a\n",
+        "      ON m.`부서명` = a.`부서명`\n",
+        "      AND m.`계정명` = a.`계정명`\n",
+        "WHERE\n",
+        "  m.`plan_amt` > 1000000\n",
+        "  AND m.`act_amt` / NULLIF(m.`plan_amt`, 0) > 1.2\n",
+        "ORDER BY\n",
+        "  `초과금액_vs계획` DESC\n",
+        "LIMIT 50"
+      ]
+    },
+    {
+      "asset_name": "wonik_poc.wonik_gold.bgt_expense_metrics",
+      "displayName": "경비현황 메트릭 뷰",
+      "name": "expense_metrics_v2"
+    },
+    {
+      "config": {
+        "comment": "경비현황 로컬 메트릭 뷰 — 잔여예산/초과집행 집계 수준 보정",
+        "dimensions": [
+          {
+            "expr": "source.plan_year",
+            "name": "계획연도",
+            "synonyms": [
+              "plan_year",
+              "연도"
+            ]
+          },
+          {
+            "expr": "source.base_month",
+            "name": "기준월",
+            "synonyms": [
+              "base_month",
+              "월"
+            ]
+          },
+          {
+            "expr": "source.expense_cat",
+            "name": "경비구분",
+            "synonyms": [
+              "expense_cat"
+            ]
+          },
+          {
+            "expr": "source.dept_std",
+            "name": "표준부서",
+            "synonyms": [
+              "dept_std",
+              "부서",
+              "부서명"
+            ]
+          },
+          {
+            "expr": "source.biz_unit",
+            "name": "사업부문",
+            "synonyms": [
+              "biz_unit",
+              "사업부"
+            ]
+          },
+          {
+            "comment": "사업본부 그룹핑 — dept_std 기준 매핑 (6개 카테고리)",
+            "expr": "CASE\n  WHEN source.dept_std IN ('COO', 'System본부', '글로벌영업팀', '영업팀', '생산기술팀', '제조팀', '품질G', 'CS팀') THEN 'System본부'\n  WHEN source.dept_std IN ('EPC본부', 'EPC사업팀', '건설팀', 'EPC영업팀', 'SDC G', 'Ne Reusing', 'P4 ISO BSGS', 'P5 ISO BSGS') THEN 'EPC본부'\n  WHEN source.dept_std IN ('연구소', '신제품개발G', '연구기술G') THEN '연구소'\n  WHEN source.dept_std IN ('경영지원본부', '경영인프라혁신TF', '구매팀', '기획팀', '재무팀', '준법G') THEN '경영지원본부'\n  WHEN source.dept_std IN ('인사본부(사업부문)', '인사팀', '정보전략팀') THEN '인사본부'\n  WHEN source.dept_std IN ('대표이사(사업)', '안전환경경영', '공통', '비서실', 'WT TF') THEN '본사공통'\n  ELSE '본사공통'\nEND\n",
+            "name": "사업본부",
+            "synonyms": [
+              "본부",
+              "사업부별"
+            ]
+          },
+          {
+            "expr": "source.acct_cd",
+            "name": "계정코드",
+            "synonyms": [
+              "acct_cd"
+            ]
+          },
+          {
+            "expr": "dim_account.acct_nm",
+            "name": "계정명",
+            "synonyms": [
+              "acct_nm"
+            ]
+          },
+          {
+            "comment": "총비용계정 (브론즈 정합 — source 직접 참조)",
+            "expr": "source.tot_cost_acct",
+            "name": "총비용계정",
+            "synonyms": [
+              "tot_cost_acct"
+            ]
+          },
+          {
+            "expr": "dim_account.grp_cd",
+            "name": "계정그룹코드"
+          },
+          {
+            "expr": "dim_account.grp_nm",
+            "name": "계정그룹명"
+          },
+          {
+            "expr": "dim_account.opex_acct_yn",
+            "name": "영업경비여부"
+          }
+        ],
+        "joins": [
+          {
+            "name": "dim_account",
+            "on": "source.acct_cd = dim_account.acct_cd AND source.plan_year = dim_account.plan_year",
+            "rely": {
+              "atMostOneMatch": true
+            },
+            "source": "wonik_poc.wonik_gold.dim_account"
+          }
+        ],
+        "measures": [
+          {
+            "expr": "COALESCE(SUM(source.plan_amt), 0)",
+            "format": {
+              "decimalPlaces": {
+                "places": 0,
+                "type": "exact"
+              },
+              "type": "number"
+            },
+            "name": "예산계획금액",
+            "synonyms": [
+              "plan_amt",
+              "예산"
+            ]
+          },
+          {
+            "expr": "COALESCE(SUM(source.transfer_amt), 0)",
+            "format": {
+              "decimalPlaces": {
+                "places": 0,
+                "type": "exact"
+              },
+              "type": "number"
+            },
+            "name": "이관전용금액",
+            "synonyms": [
+              "transfer_amt",
+              "이관금액"
+            ]
+          },
+          {
+            "comment": "초과 프로세스를 통해 배정된 추가예산",
+            "expr": "COALESCE(SUM(source.excess_amt), 0)",
+            "format": {
+              "decimalPlaces": {
+                "places": 0,
+                "type": "exact"
+              },
+              "type": "number"
+            },
+            "name": "추가예산배정액",
+            "synonyms": [
+              "excess_amt",
+              "추가예산"
+            ]
+          },
+          {
+            "expr": "COALESCE(SUM(source.final_bgt_amt), 0)",
+            "format": {
+              "decimalPlaces": {
+                "places": 0,
+                "type": "exact"
+              },
+              "type": "number"
+            },
+            "name": "최종예산금액",
+            "synonyms": [
+              "final_bgt_amt",
+              "최종예산"
+            ]
+          },
+          {
+            "expr": "COALESCE(SUM(source.act_amt), 0)",
+            "format": {
+              "decimalPlaces": {
+                "places": 0,
+                "type": "exact"
+              },
+              "type": "number"
+            },
+            "name": "실적금액",
+            "synonyms": [
+              "act_amt",
+              "실적"
+            ]
+          },
+          {
+            "comment": "잔여예산 = 최종예산 − 실적 (음수=초과)",
+            "expr": "COALESCE(SUM(source.final_bgt_amt), 0) - COALESCE(SUM(source.act_amt), 0)",
+            "format": {
+              "decimalPlaces": {
+                "places": 0,
+                "type": "exact"
+              },
+              "type": "number"
+            },
+            "name": "잔여예산",
+            "synonyms": [
+              "rem_bgt",
+              "잔여금액",
+              "남은예산"
+            ]
+          },
+          {
+            "comment": "초과집행 = MAX(누적실적 − 해당기간 예산계획, 0)",
+            "expr": "CASE WHEN COALESCE(SUM(source.act_amt), 0) > COALESCE(SUM(source.plan_amt), 0) THEN COALESCE(SUM(source.act_amt), 0) - COALESCE(SUM(source.plan_amt), 0) ELSE 0 END",
+            "format": {
+              "decimalPlaces": {
+                "places": 0,
+                "type": "exact"
+              },
+              "type": "number"
+            },
+            "name": "초과집행금액",
+            "synonyms": [
+              "over_bgt_amt",
+              "초과금액",
+              "초과집행"
+            ]
+          },
+          {
+            "expr": "COALESCE(COALESCE(SUM(source.act_amt), 0) / NULLIF(COALESCE(SUM(source.final_bgt_amt), 0), 0), 0)",
+            "format": {
+              "decimalPlaces": {
+                "places": 2,
+                "type": "exact"
+              },
+              "type": "percentage"
+            },
+            "name": "집행률",
+            "synonyms": [
+              "exec_rate",
+              "집행비율"
+            ]
+          }
+        ],
+        "source": "wonik_poc.wonik_gold.bgt_expense_st",
+        "version": "1.1"
+      },
+      "displayName": "경비현황 (잔여예산 보정)",
+      "name": "expense_metrics_local"
+    },
+    {
+      "displayName": "Overview KPI (고정값)",
+      "name": "overview_kpi_fixed",
+      "queryLines": [
+        "SELECT\n",
+        "  153100000000 AS `연간예산`,\n",
+        "  44800000000 AS `누적실적`,\n",
+        "  153100000000 - 44800000000 AS `잔여예산`,\n",
+        "  44800000000 / 153100000000 AS `집행률`"
+      ]
+    },
+    {
+      "displayName": "월별 예산·실적/예측 추이",
+      "name": "monthly_trend_sim",
+      "queryLines": [
+        "-- 월별 예산(막대) + 실적/예측(선) + 연말 초과 예측\n",
+        "WITH monthly AS (\n",
+        "  SELECT\n",
+        "    `총비용계정`,\n",
+        "    `기준월`,\n",
+        "    MEASURE(`예산계획금액`) AS `월예산`,\n",
+        "    MEASURE(`실적금액`) AS `월실적`\n",
+        "  FROM\n",
+        "    wonik_poc.wonik_gold.bgt_expense_metrics\n",
+        "  WHERE\n",
+        "    `총비용계정` IS NOT NULL\n",
+        "  GROUP BY\n",
+        "    `총비용계정`,\n",
+        "    `기준월`\n",
+        "),\n",
+        "avg_calc AS (\n",
+        "  SELECT\n",
+        "    `총비용계정`,\n",
+        "    SUM(`월실적`) / 5 AS `월평균`\n",
+        "  FROM\n",
+        "    monthly\n",
+        "  WHERE\n",
+        "    `기준월` IN ('01', '02', '03', '04', '05')\n",
+        "  GROUP BY\n",
+        "    `총비용계정`\n",
+        "),\n",
+        "annual_plan AS (\n",
+        "  SELECT\n",
+        "    `총비용계정`,\n",
+        "    SUM(`월예산`) AS `연간예산`\n",
+        "  FROM\n",
+        "    monthly\n",
+        "  GROUP BY\n",
+        "    `총비용계정`\n",
+        ")\n",
+        "SELECT\n",
+        "  m.`총비용계정`,\n",
+        "  m.`기준월`,\n",
+        "  m.`월예산`,\n",
+        "  CASE\n",
+        "    WHEN m.`기준월` <= '05' THEN m.`월실적`\n",
+        "    ELSE a.`월평균`\n",
+        "  END AS `월실적_예측`,\n",
+        "  a.`월평균` * 12 - p.`연간예산` AS `연말초과예측`\n",
+        "FROM\n",
+        "  monthly m\n",
+        "    JOIN avg_calc a\n",
+        "      ON m.`총비용계정` = a.`총비용계정`\n",
+        "    JOIN annual_plan p\n",
+        "      ON m.`총비용계정` = p.`총비용계정`\n",
+        "ORDER BY\n",
+        "  m.`총비용계정`,\n",
+        "  m.`기준월`"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "displayName": "전사 경비 현황 Overview",
+      "layout": [
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 0,
+            "y": 0
+          },
+          "widget": {
+            "name": "kpi_yr_budget",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`최종예산금액`)",
+                      "name": "measure(최종예산금액)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(최종예산금액)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 0,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "연간 예산"
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 3,
+            "y": 0
+          },
+          "widget": {
+            "name": "kpi_acc_actual",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`실적금액`)",
+                      "name": "measure(실적금액)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(실적금액)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 0,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "누적 실적"
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 6,
+            "y": 0
+          },
+          "widget": {
+            "name": "kpi_yr_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`집행률`)",
+                      "name": "measure(집행률)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(집행률)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 1,
+                      "type": "exact"
+                    },
+                    "type": "number-percent"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "집행률"
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 9,
+            "y": 0
+          },
+          "widget": {
+            "name": "kpi_acc_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`잔여예산`)",
+                      "name": "measure(잔여예산)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(잔여예산)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 0,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "잔여예산"
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 7,
+            "width": 6,
+            "x": 0,
+            "y": 2
+          },
+          "widget": {
+            "name": "monthly_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_v2",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`기준월`",
+                      "name": "기준월"
+                    },
+                    {
+                      "expression": "MEASURE(`예산계획금액`)",
+                      "name": "measure(예산계획금액)"
+                    },
+                    {
+                      "expression": "MEASURE(`실적금액`)",
+                      "name": "measure(실적금액)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "기준월",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "axis": {
+                    "title": "단위: 억"
+                  },
+                  "format": {
+                    "abbreviation": "compact",
+                    "type": "number-plain"
+                  },
+                  "primary": {
+                    "fields": [
+                      {
+                        "displayName": "예산계획금액",
+                        "fieldName": "measure(예산계획금액)"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "secondary": {
+                    "fields": [
+                      {
+                        "displayName": "실적금액",
+                        "fieldName": "measure(실적금액)"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "월별 예산 vs 실적 추이"
+              },
+              "version": 1,
+              "widgetType": "combo"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 7,
+            "width": 3,
+            "x": 9,
+            "y": 2
+          },
+          "widget": {
+            "name": "expense_cat_bar",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_v2",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`경비구분`",
+                      "name": "경비구분"
+                    },
+                    {
+                      "expression": "MEASURE(`실적금액`)",
+                      "name": "measure(실적금액)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`기준월` IN ('01','02','03','04','05')"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "경비구분",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "axis": {
+                    "title": "단위: 억"
+                  },
+                  "displayName": "실적금액",
+                  "fieldName": "measure(실적금액)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "type": "number-plain"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "경비구분별 집행 현황"
+              },
+              "version": 3,
+              "widgetType": "bar"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 7,
+            "width": 3,
+            "x": 6,
+            "y": 2
+          },
+          "widget": {
+            "name": "dept_top10",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`실적금액`)",
+                      "name": "measure(실적금액)"
+                    },
+                    {
+                      "expression": "`사업본부`",
+                      "name": "사업본부"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`기준월` IN ('01','02','03','04','05')"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "angle": {
+                  "fieldName": "measure(실적금액)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "type": "number-plain"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "사업본부",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "사업부별 누적 실적"
+              },
+              "version": 3,
+              "widgetType": "pie"
+            }
+          }
+        }
+      ],
+      "layoutVersion": "GRID_V1",
+      "name": "048cbafe",
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "displayName": "부서·계정 드릴다운",
+      "layout": [
+        {
+          "position": {
+            "height": 9,
+            "width": 12,
+            "x": 0,
+            "y": 2
+          },
+          "widget": {
+            "name": "dept_acct_pivot",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "cubeGroupingSets": {
+                    "sets": [
+                      {
+                        "fieldNames": [
+                          "표준부서"
+                        ]
+                      },
+                      {
+                        "fieldNames": [
+                          "총비용계정"
+                        ]
+                      }
+                    ]
+                  },
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`표준부서`",
+                      "name": "표준부서"
+                    },
+                    {
+                      "expression": "`총비용계정`",
+                      "name": "총비용계정"
+                    },
+                    {
+                      "name": "$pivot_measure",
+                      "variable": "pivot_measure"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`기준월` IN ('01','02','03','04','05')"
+                    },
+                    {
+                      "expression": "`총비용계정` IS NOT NULL"
+                    }
+                  ],
+                  "orders": [
+                    {
+                      "direction": "ASC",
+                      "expression": "`표준부서`"
+                    },
+                    {
+                      "direction": "ASC",
+                      "expression": "`총비용계정`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "cells": {
+                  "displayAs": "rows",
+                  "fields": [
+                    {
+                      "cellType": "text",
+                      "fieldName": "$pivot_measure"
+                    }
+                  ]
+                },
+                "columns": {
+                  "fields": [
+                    {
+                      "fieldName": "총비용계정",
+                      "scale": {
+                        "type": "categorical"
+                      }
+                    }
+                  ]
+                },
+                "rows": {
+                  "fields": [
+                    {
+                      "fieldName": "표준부서",
+                      "scale": {
+                        "type": "categorical"
+                      }
+                    }
+                  ]
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "부서×총비용계정"
+              },
+              "version": 4,
+              "widgetType": "pivot"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 7,
+            "width": 6,
+            "x": 0,
+            "y": 11
+          },
+          "widget": {
+            "name": "acct_plan_vs_act",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "expression": "`총비용계정`",
+                      "name": "총비용계정"
+                    },
+                    {
+                      "name": "$pivot_measure",
+                      "variable": "pivot_measure"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`기준월` IN ('01','02','03','04','05')"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "총비용계정",
+                  "scale": {
+                    "sort": {
+                      "by": "y"
+                    },
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "$pivot_measure",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "총비용계정별 지표 분석"
+              },
+              "version": 3,
+              "widgetType": "bar"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 7,
+            "width": 6,
+            "x": 6,
+            "y": 11
+          },
+          "widget": {
+            "name": "over_budget_tbl",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "over_budget_alert",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "expression": "`부서명`",
+                      "name": "부서명"
+                    },
+                    {
+                      "expression": "`계정명`",
+                      "name": "계정명"
+                    },
+                    {
+                      "expression": "`예산계획_1_5월`",
+                      "name": "예산계획_1_5월"
+                    },
+                    {
+                      "expression": "`최종예산_연간`",
+                      "name": "최종예산_연간"
+                    },
+                    {
+                      "expression": "`실적_1_5월`",
+                      "name": "실적_1_5월"
+                    },
+                    {
+                      "expression": "`초과금액_vs계획`",
+                      "name": "초과금액_vs계획"
+                    },
+                    {
+                      "expression": "`집행률_vs계획`",
+                      "name": "집행률_vs계획"
+                    },
+                    {
+                      "expression": "`집행률_vs연간예산`",
+                      "name": "집행률_vs연간예산"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "columns": [
+                  {
+                    "displayName": "부서",
+                    "fieldName": "부서명"
+                  },
+                  {
+                    "displayName": "계정명",
+                    "fieldName": "계정명"
+                  },
+                  {
+                    "displayName": "예산계획(1~5월)",
+                    "fieldName": "예산계획_1_5월"
+                  },
+                  {
+                    "displayName": "최종예산(연간)",
+                    "fieldName": "최종예산_연간"
+                  },
+                  {
+                    "displayName": "실적(1~5월)",
+                    "fieldName": "실적_1_5월"
+                  },
+                  {
+                    "displayName": "초과금액",
+                    "fieldName": "초과금액_vs계획"
+                  },
+                  {
+                    "displayName": "집행률%(vs계획)",
+                    "fieldName": "집행률_vs계획"
+                  },
+                  {
+                    "displayName": "집행률%(vs연간예산)",
+                    "fieldName": "집행률_vs연간예산"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "초과 계정 경고"
+              },
+              "version": 2,
+              "widgetType": "table"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 3,
+            "y": 0
+          },
+          "widget": {
+            "name": "filter_biz_unit",
+            "queries": [
+              {
+                "name": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_사업부문",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`사업부문`",
+                      "name": "사업부문"
+                    },
+                    {
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)",
+                      "name": "사업부문_associativity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "사업부문",
+                    "queryName": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_사업부문"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "사업부 필터"
+              },
+              "version": 2,
+              "widgetType": "filter-multi-select"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 6,
+            "y": 0
+          },
+          "widget": {
+            "name": "filter_dept",
+            "queries": [
+              {
+                "name": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_표준부서",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`표준부서`",
+                      "name": "표준부서"
+                    },
+                    {
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)",
+                      "name": "표준부서_associativity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "표준부서",
+                    "queryName": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_표준부서"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "부서명 필터"
+              },
+              "version": 2,
+              "widgetType": "filter-multi-select"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 9,
+            "y": 0
+          },
+          "widget": {
+            "name": "filter_acct",
+            "queries": [
+              {
+                "name": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_총비용계정",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`총비용계정`",
+                      "name": "총비용계정"
+                    },
+                    {
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)",
+                      "name": "총비용계정_associativity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "총비용계정",
+                    "queryName": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_총비용계정"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "총비용계정 필터"
+              },
+              "version": 2,
+              "widgetType": "filter-multi-select"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 0,
+            "y": 0
+          },
+          "widget": {
+            "name": "measure_selector",
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "variableName": "pivot_measure"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "측정값 선택"
+              },
+              "version": 2,
+              "widgetType": "filter-single-select"
+            }
+          }
+        }
+      ],
+      "layoutVersion": "GRID_V1",
+      "name": "dept_acct_drill",
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "displayName": "주요 계정 심층 분석",
+      "layout": [
+        {
+          "position": {
+            "height": 2,
+            "width": 4,
+            "x": 0,
+            "y": 0
+          },
+          "widget": {
+            "name": "f_acct",
+            "queries": [
+              {
+                "name": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_총비용계정",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`총비용계정`",
+                      "name": "총비용계정"
+                    },
+                    {
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)",
+                      "name": "총비용계정_associativity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "총비용계정",
+                    "queryName": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_총비용계정"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "총비용계정 선택"
+              },
+              "version": 2,
+              "widgetType": "filter-multi-select"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 4,
+            "x": 4,
+            "y": 0
+          },
+          "widget": {
+            "name": "f_dept",
+            "queries": [
+              {
+                "name": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_표준부서",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`표준부서`",
+                      "name": "표준부서"
+                    },
+                    {
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)",
+                      "name": "표준부서_associativity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "표준부서",
+                    "queryName": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_표준부서"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "부서명 선택"
+              },
+              "version": 2,
+              "widgetType": "filter-multi-select"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 4,
+            "x": 8,
+            "y": 0
+          },
+          "widget": {
+            "name": "f_month",
+            "queries": [
+              {
+                "name": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_기준월",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`기준월`",
+                      "name": "기준월"
+                    },
+                    {
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)",
+                      "name": "기준월_associativity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "기준월",
+                    "queryName": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_기준월"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "기준월 선택"
+              },
+              "version": 2,
+              "widgetType": "filter-multi-select"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 0,
+            "y": 2
+          },
+          "widget": {
+            "name": "kpi_plan",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`예산계획금액`)",
+                      "name": "measure(예산계획금액)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(예산계획금액)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "예산계획금액"
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 3,
+            "y": 2
+          },
+          "widget": {
+            "name": "kpi_act",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`실적금액`)",
+                      "name": "measure(실적금액)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(실적금액)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "누적 실적금액"
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 6,
+            "y": 2
+          },
+          "widget": {
+            "name": "kpi_rem",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`잔여예산`)",
+                      "name": "measure(잔여예산)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(잔여예산)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "잔여예산"
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 3,
+            "x": 9,
+            "y": 2
+          },
+          "widget": {
+            "name": "kpi_excess",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`초과집행금액`)",
+                      "name": "measure(초과집행금액)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(초과집행금액)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "초과집행금액"
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 7,
+            "width": 8,
+            "x": 0,
+            "y": 4
+          },
+          "widget": {
+            "name": "monthly_combo",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`기준월`",
+                      "name": "기준월"
+                    },
+                    {
+                      "expression": "MEASURE(`예산계획금액`)",
+                      "name": "measure(예산계획금액)"
+                    },
+                    {
+                      "expression": "MEASURE(`실적금액`)",
+                      "name": "measure(실적금액)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "기준월",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "axis": {
+                    "title": "단위: 억"
+                  },
+                  "format": {
+                    "abbreviation": "compact",
+                    "type": "number-plain"
+                  },
+                  "primary": {
+                    "fields": [
+                      {
+                        "displayName": "예산계획",
+                        "fieldName": "measure(예산계획금액)"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "secondary": {
+                    "fields": [
+                      {
+                        "displayName": "실적",
+                        "fieldName": "measure(실적금액)"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "월별 계획·실적 추이"
+              },
+              "version": 1,
+              "widgetType": "combo"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 7,
+            "width": 4,
+            "x": 8,
+            "y": 4
+          },
+          "widget": {
+            "name": "dept_pie",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MEASURE(`실적금액`)",
+                      "name": "measure(실적금액)"
+                    },
+                    {
+                      "expression": "`표준부서`",
+                      "name": "표준부서"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "angle": {
+                  "fieldName": "measure(실적금액)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "표준부서",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "부서별 실적 비중"
+              },
+              "version": 3,
+              "widgetType": "pie"
+            }
+          }
+        }
+      ],
+      "layoutVersion": "GRID_V1",
+      "name": "deep_analysis",
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "displayName": "예측 및 시뮬레이션",
+      "layout": [
+        {
+          "position": {
+            "height": 7,
+            "width": 12,
+            "x": 0,
+            "y": 0
+          },
+          "widget": {
+            "name": "forecast_bar",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "yr_forecast",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "expression": "`총비용계정`",
+                      "name": "총비용계정"
+                    },
+                    {
+                      "expression": "`yr_plan`",
+                      "name": "yr_plan"
+                    },
+                    {
+                      "expression": "`yr_estimated`",
+                      "name": "yr_estimated"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`yr_plan` > 0"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "총비용계정",
+                  "scale": {
+                    "categorySize": {
+                      "number": 25,
+                      "type": "number-of-categories"
+                    },
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  },
+                  "primary": {
+                    "fields": [
+                      {
+                        "displayName": "연간예산",
+                        "fieldName": "yr_plan"
+                      },
+                      {
+                        "displayName": "연말예측(현재속도)",
+                        "fieldName": "yr_estimated"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "domain": {
+                      "max": 30000000000,
+                      "min": 0
+                    },
+                    "type": "quantitative"
+                  },
+                  "secondary": {
+                    "fields": []
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "총비용계정별 연간예산 vs 연말예측"
+              },
+              "mark": {
+                "layout": "group"
+              },
+              "version": 1,
+              "widgetType": "combo"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 8,
+            "width": 12,
+            "x": 0,
+            "y": 13
+          },
+          "widget": {
+            "name": "forecast_tbl",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "yr_forecast",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "expression": "`총비용계정`",
+                      "name": "총비용계정"
+                    },
+                    {
+                      "expression": "`yr_plan`",
+                      "name": "yr_plan"
+                    },
+                    {
+                      "expression": "`acc_act_5m`",
+                      "name": "acc_act_5m"
+                    },
+                    {
+                      "expression": "`monthly_avg`",
+                      "name": "monthly_avg"
+                    },
+                    {
+                      "expression": "`yr_estimated`",
+                      "name": "yr_estimated"
+                    },
+                    {
+                      "expression": "`yr_accel_20`",
+                      "name": "yr_accel_20"
+                    },
+                    {
+                      "expression": "`yr_est_rate`",
+                      "name": "yr_est_rate"
+                    },
+                    {
+                      "expression": "`yr_surplus_deficit`",
+                      "name": "yr_surplus_deficit"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "columns": [
+                  {
+                    "displayName": "총비용계정",
+                    "fieldName": "총비용계정"
+                  },
+                  {
+                    "displayName": "연간예산",
+                    "fieldName": "yr_plan"
+                  },
+                  {
+                    "displayName": "5월 누적실적",
+                    "fieldName": "acc_act_5m"
+                  },
+                  {
+                    "displayName": "월평균",
+                    "fieldName": "monthly_avg"
+                  },
+                  {
+                    "displayName": "연말예측(현재속도)",
+                    "fieldName": "yr_estimated"
+                  },
+                  {
+                    "displayName": "연말예측(하반기+20%)",
+                    "fieldName": "yr_accel_20"
+                  },
+                  {
+                    "displayName": "예측소진률(%)",
+                    "fieldName": "yr_est_rate"
+                  },
+                  {
+                    "displayName": "초과(+)/잔여(-)",
+                    "fieldName": "yr_surplus_deficit"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "연말 예측 시뮬레이션 (계정별)"
+              },
+              "version": 2,
+              "widgetType": "table"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 2,
+            "x": 0,
+            "y": 7
+          },
+          "widget": {
+            "name": "f_cost_acct",
+            "queries": [
+              {
+                "name": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18b0a8b281a44bf9e004b162d564a_총비용계정",
+                "query": {
+                  "datasetName": "monthly_trend_sim",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`총비용계정`",
+                      "name": "총비용계정"
+                    },
+                    {
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)",
+                      "name": "총비용계정_associativity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "총비용계정",
+                    "queryName": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18b0a8b281a44bf9e004b162d564a_총비용계정"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "총비용계정 선택"
+              },
+              "version": 2,
+              "widgetType": "filter-single-select"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 6,
+            "width": 10,
+            "x": 2,
+            "y": 7
+          },
+          "widget": {
+            "name": "monthly_trend_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "monthly_trend_sim",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "expression": "`기준월`",
+                      "name": "기준월"
+                    },
+                    {
+                      "expression": "`월예산`",
+                      "name": "월예산"
+                    },
+                    {
+                      "expression": "`월실적_예측`",
+                      "name": "월실적_예측"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "x": {
+                  "fieldName": "기준월",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  },
+                  "primary": {
+                    "fields": [
+                      {
+                        "displayName": "월 예산",
+                        "fieldName": "월예산"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "secondary": {
+                    "fields": [
+                      {
+                        "displayName": "실적/예측",
+                        "fieldName": "월실적_예측"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "월별 예산 vs 실적/예측"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "position": 1,
+                    "themeColorType": "visualizationColors"
+                  },
+                  "#F5A623"
+                ],
+                "layout": "group"
+              },
+              "version": 1,
+              "widgetType": "combo"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 3,
+            "width": 2,
+            "x": 0,
+            "y": 9
+          },
+          "widget": {
+            "name": "kpi_forecast_excess",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "monthly_trend_sim",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "MAX(`연말초과예측`)",
+                      "name": "max(연말초과예측)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "data": {
+                "queryName": "main_query"
+              },
+              "encodings": {
+                "value": {
+                  "fieldName": "max(연말초과예측)",
+                  "format": {
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "연말 초과 예측액"
+              },
+              "version": 2,
+              "widgetType": "counter"
+            }
+          }
+        }
+      ],
+      "layoutVersion": "GRID_V1",
+      "name": "simulation",
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "displayName": "Global Filters",
+      "layout": [
+        {
+          "position": {
+            "height": 2,
+            "width": 4,
+            "x": 0,
+            "y": 0
+          },
+          "widget": {
+            "name": "filter_year",
+            "queries": [
+              {
+                "name": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_계획연도",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`계획연도`",
+                      "name": "계획연도"
+                    },
+                    {
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)",
+                      "name": "계획연도_associativity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "계획연도",
+                    "queryName": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_계획연도"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "계획연도"
+              },
+              "version": 2,
+              "widgetType": "filter-single-select"
+            }
+          }
+        },
+        {
+          "position": {
+            "height": 2,
+            "width": 4,
+            "x": 4,
+            "y": 0
+          },
+          "widget": {
+            "name": "filter_expense_cat",
+            "queries": [
+              {
+                "name": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_경비구분",
+                "query": {
+                  "datasetName": "expense_metrics_local",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "expression": "`경비구분`",
+                      "name": "경비구분"
+                    },
+                    {
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)",
+                      "name": "경비구분_associativity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "경비구분",
+                    "queryName": "dashboards/01f18a1e51dc12b595fe9c6df1cf2bcb/datasets/01f18a797d35138fb74021f7edb87143_경비구분"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "경비구분"
+              },
+              "version": 2,
+              "widgetType": "filter-multi-select"
+            }
+          }
+        }
+      ],
+      "layoutVersion": "GRID_V1",
+      "name": "global_filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS"
+    }
+  ],
+  "uiSettings": {
+    "applyModeEnabled": false,
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    }
+  },
+  "variables": [
+    {
+      "displayName": "pivot_measure",
+      "field": {
+        "options": [
+          {
+            "expression": "MEASURE(`expense_metrics_local`.`집행률`)"
+          },
+          {
+            "expression": "MEASURE(`expense_metrics_local`.`예산계획금액`)"
+          },
+          {
+            "expression": "MEASURE(`expense_metrics_local`.`실적금액`)"
+          },
+          {
+            "expression": "MEASURE(`expense_metrics_local`.`최종예산금액`)"
+          },
+          {
+            "expression": "MEASURE(`expense_metrics_local`.`잔여예산`)"
+          },
+          {
+            "expression": "MEASURE(`expense_metrics_local`.`초과집행금액`)"
+          }
+        ]
+      },
+      "name": "pivot_measure"
+    }
+  ]
+}

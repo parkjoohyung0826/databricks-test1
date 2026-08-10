@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Databricks 공식 문서
+    url: https://docs.databricks.com/
+    about: 제품 동작이나 Bundle 문법을 확인할 때 사용합니다.
+

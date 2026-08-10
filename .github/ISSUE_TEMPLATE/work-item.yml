@@ -1,0 +1,127 @@
+name: Databricks 작업 등록
+description: 구현 전에 작업 범위, 데이터 영향, 완료 조건을 등록합니다.
+title: "[작업] "
+labels:
+  - status:triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        작업을 시작하기 전에 목적, 대상 환경, 데이터 영향과 완료 조건을 작성해 주세요.
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: 작업 목적
+      description: 해결하려는 문제와 기대 결과를 설명해 주세요.
+      placeholder: 무엇을 왜 변경해야 하는지 작성해 주세요.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: work_type
+    attributes:
+      label: 작업 유형
+      options:
+        - 기능 개발
+        - 버그 수정
+        - 리팩터링
+        - 데이터 모델·스키마 변경
+        - Job·Pipeline 변경
+        - Dashboard 변경
+        - ML·Model 변경
+        - CI/CD·Bundle 변경
+        - 문서·테스트
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: components
+    attributes:
+      label: 대상 영역
+      options:
+        - label: Bronze / 원천 적재
+        - label: Silver / 정제
+        - label: Gold / 마트
+        - label: Job / Workflow
+        - label: Pipeline
+        - label: Dashboard
+        - label: ML / Model
+        - label: Bundle / CI/CD
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: 대상 환경
+      options:
+        - 개인 dev만
+        - dev와 prod 모두
+        - prod만
+        - 아직 미정
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 작업 범위
+      description: 변경할 파일, Job, Dashboard, catalog.schema.table 등을 작성해 주세요.
+      placeholder: |
+        - src/silver/example.py
+        - resources/example.job.yml
+        - wonik_dev.example_silver.example_table
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: 구현 계획
+      description: 작업 순서와 접근 방법을 작성해 주세요.
+      placeholder: |
+        1. 환경 파라미터 추가
+        2. 개인 dev에서 실행
+        3. 결과 검증 후 PR 생성
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: data_risk
+    attributes:
+      label: 데이터 및 운영 영향
+      options:
+        - label: 데이터 읽기만 수행
+        - label: 테이블 또는 데이터 생성·변경
+        - label: 스키마 변경
+        - label: DELETE, DROP, OVERWRITE, CREATE OR REPLACE 포함
+        - label: Job 스케줄 또는 Pipeline 동작 변경
+        - label: Dashboard URL 또는 리소스 ID 변경 가능
+        - label: ML Experiment, Model 또는 Serving 변경
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: 검증 계획
+      description: dev에서 무엇을 실행하고 어떤 결과를 확인할지 작성해 주세요.
+      placeholder: Bundle validate, Job run, 행 수·스키마 비교, Dashboard 확인 등
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 완료 조건
+      description: 이 작업을 완료로 판단할 수 있는 조건을 체크리스트로 작성해 주세요.
+      placeholder: |
+        - [ ] dev Job 실행 성공
+        - [ ] 대상 테이블 행 수 검증
+        - [ ] PR 검증 통과
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: 참고 자료
+      description: 관련 이슈, 문서, Job run, Dashboard 또는 쿼리 링크를 추가해 주세요.
+

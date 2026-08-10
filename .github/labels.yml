@@ -1,0 +1,70 @@
+- name: type:feature
+  color: "1D76DB"
+  description: 새로운 기능 또는 데이터 제품 개발
+- name: type:bug
+  color: "D73A4A"
+  description: 오류 수정
+- name: type:refactor
+  color: "A2EEEF"
+  description: 동작 변경 없는 구조 개선
+- name: type:docs
+  color: "0075CA"
+  description: 문서 또는 협업 절차 변경
+- name: type:test
+  color: "BFDADC"
+  description: 테스트 및 검증 개선
+- name: area:bronze
+  color: "CD7F32"
+  description: Bronze 원천 적재 및 테이블
+- name: area:silver
+  color: "C0C0C0"
+  description: Silver 정제 및 표준화
+- name: area:gold
+  color: "FFD700"
+  description: Gold 마트 및 집계
+- name: area:job
+  color: "5319E7"
+  description: Databricks Job 또는 Workflow
+- name: area:pipeline
+  color: "6F42C1"
+  description: Lakeflow 또는 데이터 Pipeline
+- name: area:dashboard
+  color: "0E8A16"
+  description: AI/BI Dashboard
+- name: area:ml
+  color: "B60205"
+  description: MLflow, Model 또는 Serving
+- name: area:bundle
+  color: "0052CC"
+  description: Databricks Bundle 설정
+- name: area:ci-cd
+  color: "000000"
+  description: GitHub Actions 및 배포 자동화
+- name: env:dev
+  color: "C2E0C6"
+  description: 개인 또는 공용 개발 환경 대상
+- name: env:prod
+  color: "B60205"
+  description: 운영 환경 대상
+- name: risk:data-write
+  color: "FBCA04"
+  description: 테이블 또는 데이터 쓰기 포함
+- name: risk:schema-change
+  color: "D4C5F9"
+  description: 테이블 스키마 또는 계약 변경
+- name: risk:destructive
+  color: "B60205"
+  description: DROP, DELETE, OVERWRITE, 재생성 등 파괴적 변경
+- name: risk:resource-id
+  color: "E99695"
+  description: Dashboard URL 또는 리소스 ID 변경 가능
+- name: status:triage
+  color: "EDEDED"
+  description: 범위와 담당자 확인 필요
+- name: status:blocked
+  color: "D93F0B"
+  description: 외부 의존성 또는 의사결정으로 차단됨
+- name: priority:high
+  color: "B60205"
+  description: 우선 처리 필요
+

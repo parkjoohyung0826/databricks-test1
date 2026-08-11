@@ -1,0 +1,25 @@
+resources:
+  jobs:
+    example_test_job:
+      name: "[${bundle.target}] Example Test Job"
+      description: "A safe, manually triggered Lakeflow Job for testing bundle deployment."
+      parameters:
+        - name: message
+          default: "hello databricks"
+      tasks:
+        - task_key: run_example
+          notebook_task:
+            notebook_path: ../src/notebooks/example_test_job.py
+            source: WORKSPACE
+            base_parameters:
+              message: "{{job.parameters.message}}"
+          environment_key: default
+          timeout_seconds: 600
+      environments:
+        - environment_key: default
+          spec:
+            client: "4"
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+
